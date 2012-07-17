@@ -1,5 +1,5 @@
 # T2 Bus
-![VW Bus](https://github.com/hierynomus/t2-bus/vwbus.jpg)
+![VW Bus](https://github.com/hierynomus/t2-bus/raw/master/vwbus.jpg)
 
 An enhanced Guava-based event bus, which has the added functionality of veto-ing events.
 
