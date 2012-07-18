@@ -158,7 +158,12 @@ public class EventBus {
     /**
      * true if the current thread is currently dispatching an event
      */
-    private final AtomicBoolean isDispatching = new AtomicBoolean(false);
+    private final ThreadLocal<Boolean> isDispatching = new ThreadLocal<Boolean>() {
+        @Override
+        protected Boolean initialValue() {
+            return false;
+        }
+    };
 
     /**
      * A thread-safe cache for flattenHierarchy(). The Class class is immutable.
@@ -285,10 +290,11 @@ public class EventBus {
         // don't dispatch if we're already dispatching, that would allow reentrancy
         // and out-of-order events. Instead, leave the events to be dispatched
         // after the in-progress dispatch is complete.
-        if (isDispatching.getAndSet(true)) {
+        if (isDispatching.get()) {
             return;
         }
 
+        isDispatching.set(true);
         try {
             while (true) {
                 EventWithHandler eventWithHandler = eventsToDispatch.get().poll();
