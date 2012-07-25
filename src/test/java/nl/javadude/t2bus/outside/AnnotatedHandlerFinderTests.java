@@ -18,7 +18,7 @@ package nl.javadude.t2bus.outside;
 
 import com.google.common.collect.Lists;
 import junit.framework.TestCase;
-import nl.javadude.t2bus.EventBus;
+import nl.javadude.t2bus.T2Bus;
 import nl.javadude.t2bus.Subscribe;
 
 import java.util.List;
@@ -49,7 +49,7 @@ public class AnnotatedHandlerFinderTests {
     @Override
     protected void setUp() throws Exception {
       handler = createHandler();
-      EventBus bus = new EventBus();
+      T2Bus bus = new T2Bus();
       bus.register(handler);
       bus.post(EVENT);
     }

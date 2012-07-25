@@ -20,7 +20,7 @@ import com.google.common.collect.Multimap;
 
 /**
  * A method for finding event handler methods in objects, for use by
- * {@link EventBus}.
+ * {@link T2Bus}.
  *
  * @author Cliff Biffle
  */

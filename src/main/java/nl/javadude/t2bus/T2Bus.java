@@ -29,6 +29,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map.Entry;
@@ -37,7 +38,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import static com.google.common.collect.Lists.newArrayList;
 
@@ -74,13 +74,13 @@ import static com.google.common.collect.Lists.newArrayList;
  * <p>When {@code post} is called, all registered handlers for an event are run
  * in sequence, so handlers should be reasonably quick.  If an event may trigger
  * an extended process (such as a database load), spawn a thread or queue it for
- * later.  (For a convenient way to do this, use an {@link AsyncEventBus}.)
+ * later.
  * <p/>
  * <p>All handlers that have {@link nl.javadude.t2bus.Subscribe#canVeto()}} set,
  * will be called before any handlers that cannot veto the event. If a handler vetoes
  * the event by throwing a {@link VetoException}, further processing of the event is suppressed.
  * </p>
- *<h2>Handler Methods</h2>
+ * <h2>Handler Methods</h2>
  * Event handler methods must accept only one argument: the event.
  * <p/>
  * <p>Handlers should not, in general, throw.  If they do, the EventBus will
@@ -90,7 +90,7 @@ import static com.google.common.collect.Lists.newArrayList;
  * <p/>
  * <p>The only exception to this general rule are the veto handlers. They can
  * throw a {@link VetoException} indicating that the event should not be processed further.</p>
- *
+ * <p/>
  * <p>The EventBus guarantees that it will not call a handler method from
  * multiple threads simultaneously, unless the method explicitly allows it by
  * bearing the {@link AllowConcurrentEvents} annotation.  If this annotation is
@@ -117,7 +117,7 @@ import static com.google.common.collect.Lists.newArrayList;
  * @author Jeroen van Erp, jeroen@javadude.nl
  * @since 10.0
  */
-public class EventBus {
+public class T2Bus {
 
     /**
      * All registered event handlers, indexed by event type.
@@ -137,6 +137,8 @@ public class EventBus {
      */
     private final Logger logger;
 
+    private final ExceptionHandler defaultExceptionHandler;
+
     /**
      * Strategy for finding handler methods in registered objects.  Currently,
      * only the {@link AnnotatedHandlerFinder} is supported, but this is
@@ -147,11 +149,11 @@ public class EventBus {
     /**
      * queues of events for the current thread to dispatch
      */
-    private final ThreadLocal<ConcurrentLinkedQueue<EventWithHandler>> eventsToDispatch =
-            new ThreadLocal<ConcurrentLinkedQueue<EventWithHandler>>() {
+    private final ThreadLocal<ConcurrentLinkedQueue<EventWithHandlers>> eventsToDispatch =
+            new ThreadLocal<ConcurrentLinkedQueue<EventWithHandlers>>() {
                 @Override
-                protected ConcurrentLinkedQueue<EventWithHandler> initialValue() {
-                    return new ConcurrentLinkedQueue<EventWithHandler>();
+                protected ConcurrentLinkedQueue<EventWithHandlers> initialValue() {
+                    return new ConcurrentLinkedQueue<EventWithHandlers>();
                 }
             };
 
@@ -182,7 +184,7 @@ public class EventBus {
     /**
      * Creates a new EventBus named "default".
      */
-    public EventBus() {
+    public T2Bus() {
         this("default");
     }
 
@@ -192,8 +194,9 @@ public class EventBus {
      * @param identifier a brief name for this bus, for logging purposes.  Should
      *                   be a valid Java identifier.
      */
-    public EventBus(String identifier) {
+    public T2Bus(String identifier) {
         logger = LoggerFactory.getLogger(com.google.common.eventbus.EventBus.class.getName() + "." + identifier);
+        defaultExceptionHandler = new LoggingExceptionHandler(logger);
     }
 
     /**
@@ -240,6 +243,25 @@ public class EventBus {
      * @param event event to post.
      */
     public void post(Object event) {
+        post(event, defaultExceptionHandler);
+    }
+
+    /**
+     * Posts an event to all registered handlers.  This method will return
+     * successfully after the event has been posted to all handlers, and
+     * regardless of any exceptions thrown by handlers.
+     * <p/>
+     * If an exception occurs in any handler, the passed in exceptionHandler
+     * will be used to handle the exception.
+     * <p/>
+     * <p>If no handlers have been subscribed for {@code event}'s class, and
+     * {@code event} is not already a {@link DeadEvent}, it will be wrapped in a
+     * DeadEvent and reposted.
+     *
+     * @param event            event to post.
+     * @param exceptionHandler the exceptionHandler that is used to handle any exceptions from subscribers.
+     */
+    public void post(Object event, ExceptionHandler exceptionHandler) {
         Set<Class<?>> dispatchTypes = flattenHierarchy(event.getClass());
 
         boolean dispatched = false;
@@ -255,8 +277,8 @@ public class EventBus {
         }
 
         if (dispatched) {
-            enqueueEvent(event, vetoers, handlers);
-        } else if(!(event instanceof DeadEvent)) {
+            enqueueEvent(event, vetoers, handlers, exceptionHandler);
+        } else if (!(event instanceof DeadEvent)) {
             post(new DeadEvent(this, event));
         }
 
@@ -278,8 +300,8 @@ public class EventBus {
      * {@link #dispatchQueuedEvents()}. Events are queued in-order of occurrence
      * so they can be dispatched in the same order.
      */
-    void enqueueEvent(Object event, List<EventHandler> vetoers, List<EventHandler> handlers) {
-        eventsToDispatch.get().offer(new EventWithHandler(event, vetoers, handlers));
+    void enqueueEvent(Object event, List<EventHandler> vetoers, List<EventHandler> handlers, final ExceptionHandler exceptionHandler) {
+        eventsToDispatch.get().offer(new EventWithHandlers(event, vetoers, handlers, exceptionHandler));
     }
 
     /**
@@ -297,7 +319,7 @@ public class EventBus {
         isDispatching.set(true);
         try {
             while (true) {
-                EventWithHandler eventWithHandler = eventsToDispatch.get().poll();
+                EventWithHandlers eventWithHandler = eventsToDispatch.get().poll();
                 if (eventWithHandler == null) {
                     break;
                 }
@@ -309,18 +331,18 @@ public class EventBus {
         }
     }
 
-    void dispatch(EventWithHandler eventWithHandler) {
+    void dispatch(EventWithHandlers eventWithHandler) {
         boolean canContinue = true;
 
         Object event = eventWithHandler.event;
         for (EventHandler vetoer : eventWithHandler.vetoers) {
-            canContinue = handle(event, vetoer);
+            canContinue = handle(event, vetoer, eventWithHandler.exceptionHandler);
             if (!canContinue) break;
         }
 
         if (canContinue) {
             for (EventHandler handler : eventWithHandler.handlers) {
-                handle(event, handler);
+                handle(event, handler, eventWithHandler.exceptionHandler);
             }
         }
     }
@@ -333,19 +355,29 @@ public class EventBus {
      * @param event   event to dispatch.
      * @param wrapper wrapper that will call the handler.
      */
-    boolean handle(Object event, EventHandler wrapper) {
+    boolean handle(Object event, EventHandler wrapper, ExceptionHandler handler) {
         try {
             wrapper.handleEvent(event);
         } catch (InvocationTargetException e) {
-            logger.error("Could not dispatch event: " + event + " to handler " + wrapper, e);
+            handleException(event, wrapper, handler, e);
         } catch (VetoException e) {
             if (wrapper.isVetoer()) {
                 logger.error("Event " + event + " was vetoed by handler " + wrapper, e);
                 return false;
             }
-            logger.error("Could not dispatch event: " + event + " to handler " + wrapper, e);
+            throw new Error("non-vetoer " + wrapper + " should not be able to throw a VetoException", e);
         }
         return true;
+    }
+
+    private void handleException(final Object event, final EventHandler wrapper, final ExceptionHandler handler, final InvocationTargetException e) {
+        try {
+            handler.handle(e.getCause(), event, wrapper.target, wrapper.method);
+        } catch (Exception ex) {
+            logger.error("Error occurred when handling exception from [{}] with event [{}]", wrapper, event);
+            logger.error("Exception that was being handled: ", e.getCause());
+            logger.error("Exception that occurred: ", ex);
+        }
     }
 
     /**
@@ -390,15 +422,30 @@ public class EventBus {
     /**
      * simple struct representing an event and its handlers
      */
-    static class EventWithHandler {
+    static class EventWithHandlers {
         final Object event;
+        private final ExceptionHandler exceptionHandler;
         private final List<EventHandler> vetoers;
         private final List<EventHandler> handlers;
 
-        public EventWithHandler(Object event, List<EventHandler> vetoers, List<EventHandler> handlers) {
+        public EventWithHandlers(Object event, List<EventHandler> vetoers, List<EventHandler> handlers, ExceptionHandler exceptionHandler) {
             this.event = event;
             this.vetoers = vetoers;
             this.handlers = handlers;
+            this.exceptionHandler = exceptionHandler;
+        }
+    }
+
+    static class LoggingExceptionHandler implements ExceptionHandler {
+        private final Logger logger;
+
+        LoggingExceptionHandler(final Logger logger) {
+            this.logger = logger;
+        }
+
+        @Override
+        public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) {
+            logger.error("Could not dispatch event: " + event + " to handler " + subscriber + "[" + handler.getName() + "]", t);
         }
     }
 }

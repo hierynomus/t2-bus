@@ -35,7 +35,7 @@ public class DeadEvent {
    * Creates a new DeadEvent.
    *
    * @param source  object broadcasting the DeadEvent (generally the
-   *                {@link EventBus}).
+   *                {@link T2Bus}).
    * @param event   the event that could not be delivered.
    */
   public DeadEvent(Object source, Object event) {
@@ -45,7 +45,7 @@ public class DeadEvent {
 
   /**
    * Returns the object that originated this event (<em>not</em> the object that
-   * originated the wrapped event).  This is generally an {@link EventBus}.
+   * originated the wrapped event).  This is generally an {@link T2Bus}.
    *
    * @return the source of this event.
    */

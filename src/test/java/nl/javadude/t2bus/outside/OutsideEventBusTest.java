@@ -17,7 +17,7 @@
 package nl.javadude.t2bus.outside;
 
 import junit.framework.TestCase;
-import nl.javadude.t2bus.EventBus;
+import nl.javadude.t2bus.T2Bus;
 import nl.javadude.t2bus.Subscribe;
 
 import java.util.concurrent.atomic.AtomicInteger;
@@ -38,7 +38,7 @@ public class OutsideEventBusTest extends TestCase {
   public void testAnonymous() {
     final AtomicReference<String> holder = new AtomicReference<String>();
     final AtomicInteger deliveries = new AtomicInteger();
-    EventBus bus = new EventBus();
+    T2Bus bus = new T2Bus();
     bus.register(new Object() {
       @Subscribe
       public void accept(String str) {

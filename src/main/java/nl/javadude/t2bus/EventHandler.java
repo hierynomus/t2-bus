@@ -41,11 +41,11 @@ class EventHandler {
     /**
      * Object sporting the handler method.
      */
-    private final Object target;
+    final Object target;
     /**
      * Handler method.
      */
-    private final Method method;
+    final Method method;
 
     /**
      * Whether the method is a vetoer.

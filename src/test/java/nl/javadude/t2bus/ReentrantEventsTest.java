@@ -32,7 +32,7 @@ public class ReentrantEventsTest extends TestCase {
   static final String FIRST = "one";
   static final Double SECOND = 2.0d;
 
-  final EventBus bus = new EventBus();
+  final T2Bus bus = new T2Bus();
 
   public void testNoReentrantEvents() {
     ReentrantEventsHater hater = new ReentrantEventsHater();

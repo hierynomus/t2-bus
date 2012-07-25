@@ -20,10 +20,13 @@ import com.google.common.collect.Lists;
 import org.junit.Before;
 import org.junit.Test;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
+import static com.google.common.collect.Lists.newArrayList;
 import static org.hamcrest.Matchers.*;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
@@ -33,15 +36,15 @@ import static org.junit.Assert.fail;
  *
  * @author Cliff Biffle
  */
-public class EventBusTest {
+public class T2BusTest {
     private static final String EVENT = "Hello";
     private static final String BUS_IDENTIFIER = "test-bus";
 
-    private EventBus bus;
+    private T2Bus bus;
 
     @Before
     public void setUp() throws Exception {
-        bus = new EventBus(BUS_IDENTIFIER);
+        bus = new T2Bus(BUS_IDENTIFIER);
     }
 
     @Test
@@ -226,6 +229,49 @@ public class EventBusTest {
             @Subscribe
             public void shouldNotAllowThrowing(Object event) throws VetoException {}
         });
+    }
+
+    @Test
+    public void shouldCallPassedInExceptionHandlerWhenExceptionOccurs() {
+        bus.register(new Object() {
+            @Subscribe
+            public void iThrow(String s) {
+                throw new IllegalArgumentException(s);
+            }
+        });
+
+        final List<Throwable> exceptions = newArrayList();
+        ExceptionHandler handler = new ExceptionHandler() {
+            @Override
+            public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) {
+                exceptions.add(t);
+            }
+        };
+
+        bus.post(EVENT, handler);
+
+        assertThat(exceptions, hasSize(1));
+        assertThat(exceptions.get(0), instanceOf(IllegalArgumentException.class));
+        assertThat(exceptions.get(0).getMessage(), equalTo(EVENT));
+    }
+
+    @Test
+    public void shouldNotFailWhenExceptionHandlerFails() {
+        bus.register(new Object() {
+            @Subscribe
+            public void iThrow(String s) {
+                throw new IllegalArgumentException(s);
+            }
+        });
+
+        ExceptionHandler handler = new ExceptionHandler() {
+            @Override
+            public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) {
+                throw new IllegalStateException("Boom!", t);
+            }
+        };
+
+        bus.post(EVENT, handler);
     }
 
     /**
