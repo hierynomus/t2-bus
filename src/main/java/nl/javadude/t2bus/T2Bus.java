@@ -168,6 +168,16 @@ public class T2Bus {
     };
 
     /**
+     * ExceptionHandler for the current thread. Can only be set when we're not dispatching events.
+     */
+    private final ThreadLocal<ExceptionHandler> exceptionHandler = new ThreadLocal<ExceptionHandler>() {
+        @Override
+        protected ExceptionHandler initialValue() {
+            return defaultExceptionHandler;
+        }
+    };
+
+    /**
      * A thread-safe cache for flattenHierarchy(). The Class class is immutable.
      */
     private final LoadingCache<Class<?>, Set<Class<?>>> flattenHierarchyCache =
@@ -243,7 +253,27 @@ public class T2Bus {
      * @param event event to post.
      */
     public void post(Object event) {
-        post(event, defaultExceptionHandler);
+        Set<Class<?>> dispatchTypes = flattenHierarchy(event.getClass());
+
+        boolean dispatched = false;
+        List<EventHandler> vetoers = newArrayList();
+        List<EventHandler> handlers = newArrayList();
+
+        for (Class<?> eventType : dispatchTypes) {
+            Set<EventHandler> wrappers = getHandlersForEventType(eventType);
+            if (wrappers != null && !wrappers.isEmpty()) {
+                dispatched = true;
+                divvyUpWrappers(wrappers, vetoers, handlers);
+            }
+        }
+
+        if (dispatched) {
+            enqueueEvent(event, vetoers, handlers);
+        } else if (!(event instanceof DeadEvent)) {
+            post(new DeadEvent(this, event));
+        }
+
+        dispatchQueuedEvents();
     }
 
     /**
@@ -262,27 +292,12 @@ public class T2Bus {
      * @param exceptionHandler the exceptionHandler that is used to handle any exceptions from subscribers.
      */
     public void post(Object event, ExceptionHandler exceptionHandler) {
-        Set<Class<?>> dispatchTypes = flattenHierarchy(event.getClass());
-
-        boolean dispatched = false;
-        List<EventHandler> vetoers = newArrayList();
-        List<EventHandler> handlers = newArrayList();
-
-        for (Class<?> eventType : dispatchTypes) {
-            Set<EventHandler> wrappers = getHandlersForEventType(eventType);
-            if (wrappers != null && !wrappers.isEmpty()) {
-                dispatched = true;
-                divvyUpWrappers(wrappers, vetoers, handlers);
-            }
+        if (isDispatching.get()) {
+            throw new BusError("Cannot set a new ExceptionHandler when in a dispatch loop. Event = [%s]", event);
         }
-
-        if (dispatched) {
-            enqueueEvent(event, vetoers, handlers, exceptionHandler);
-        } else if (!(event instanceof DeadEvent)) {
-            post(new DeadEvent(this, event));
-        }
-
-        dispatchQueuedEvents();
+        this.exceptionHandler.set(exceptionHandler);
+        post(event);
+        this.exceptionHandler.remove();
     }
 
     private void divvyUpWrappers(Set<EventHandler> wrappers, List<EventHandler> vetoers, List<EventHandler> handlers) {
@@ -300,8 +315,8 @@ public class T2Bus {
      * {@link #dispatchQueuedEvents()}. Events are queued in-order of occurrence
      * so they can be dispatched in the same order.
      */
-    void enqueueEvent(Object event, List<EventHandler> vetoers, List<EventHandler> handlers, final ExceptionHandler exceptionHandler) {
-        eventsToDispatch.get().offer(new EventWithHandlers(event, vetoers, handlers, exceptionHandler));
+    void enqueueEvent(Object event, List<EventHandler> vetoers, List<EventHandler> handlers) {
+        eventsToDispatch.get().offer(new EventWithHandlers(event, vetoers, handlers));
     }
 
     /**
@@ -336,13 +351,13 @@ public class T2Bus {
 
         Object event = eventWithHandler.event;
         for (EventHandler vetoer : eventWithHandler.vetoers) {
-            canContinue = handle(event, vetoer, eventWithHandler.exceptionHandler);
+            canContinue = handle(event, vetoer);
             if (!canContinue) break;
         }
 
         if (canContinue) {
             for (EventHandler handler : eventWithHandler.handlers) {
-                handle(event, handler, eventWithHandler.exceptionHandler);
+                handle(event, handler);
             }
         }
     }
@@ -355,11 +370,11 @@ public class T2Bus {
      * @param event   event to dispatch.
      * @param wrapper wrapper that will call the handler.
      */
-    boolean handle(Object event, EventHandler wrapper, ExceptionHandler handler) {
+    boolean handle(Object event, EventHandler wrapper) {
         try {
             wrapper.handleEvent(event);
         } catch (InvocationTargetException e) {
-            handleException(event, wrapper, handler, e);
+            handleException(event, wrapper, e);
         } catch (VetoException e) {
             if (wrapper.isVetoer()) {
                 logger.error("Event " + event + " was vetoed by handler " + wrapper, e);
@@ -370,11 +385,11 @@ public class T2Bus {
         return true;
     }
 
-    private void handleException(final Object event, final EventHandler wrapper, final ExceptionHandler handler, final InvocationTargetException e) {
+    private void handleException(final Object event, final EventHandler wrapper, final InvocationTargetException e) {
         try {
-            handler.handle(e.getCause(), event, wrapper.target, wrapper.method);
+            exceptionHandler.get().handle(e.getCause(), event, wrapper.target, wrapper.method);
         } catch (Exception ex) {
-            logger.error("Error occurred when handling exception from [{}] with event [{}]", wrapper, event);
+            logger.error("Error occurred when handling exception from [{}] with event [{}]", wrapper.method, event);
             logger.error("Exception that was being handled: ", e.getCause());
             logger.error("Exception that occurred: ", ex);
         }
@@ -424,15 +439,13 @@ public class T2Bus {
      */
     static class EventWithHandlers {
         final Object event;
-        private final ExceptionHandler exceptionHandler;
         private final List<EventHandler> vetoers;
         private final List<EventHandler> handlers;
 
-        public EventWithHandlers(Object event, List<EventHandler> vetoers, List<EventHandler> handlers, ExceptionHandler exceptionHandler) {
+        public EventWithHandlers(Object event, List<EventHandler> vetoers, List<EventHandler> handlers) {
             this.event = event;
             this.vetoers = vetoers;
             this.handlers = handlers;
-            this.exceptionHandler = exceptionHandler;
         }
     }
 

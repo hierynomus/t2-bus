@@ -22,13 +22,12 @@ import org.junit.Test;
 
 import java.lang.reflect.Method;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 
 import static com.google.common.collect.Lists.newArrayList;
+import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
 
 /**
@@ -167,7 +166,7 @@ public class T2BusTest {
     }
 
     @Test
-    public void unregister() {
+    public void shouldUnregister() {
         StringCatcher catcher1 = new StringCatcher();
         StringCatcher catcher2 = new StringCatcher();
         try {
@@ -253,6 +252,30 @@ public class T2BusTest {
         assertThat(exceptions, hasSize(1));
         assertThat(exceptions.get(0), instanceOf(IllegalArgumentException.class));
         assertThat(exceptions.get(0).getMessage(), equalTo(EVENT));
+    }
+
+    @Test(expected = BusError.class)
+    public void shouldNotBeAbleToChangeExceptionHandlerInDispathLoop() {
+        bus.register(new Object() {
+            @Subscribe
+            public void iPost(String s) {
+                bus.post("Another Event", new ExceptionHandler() {
+                    @Override
+                    public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) { throw new IllegalArgumentException(); }
+                });
+            }
+        });
+
+        final List<Throwable> exceptions = newArrayList();
+        ExceptionHandler handler = new ExceptionHandler() {
+            @Override
+            public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) {
+                exceptions.add(t);
+            }
+        };
+
+        bus.post(EVENT, handler);
+        fail("Should have received BusError");
     }
 
     @Test

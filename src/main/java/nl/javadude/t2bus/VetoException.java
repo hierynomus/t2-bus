@@ -8,7 +8,7 @@ import static java.lang.String.format;
  *
  * @author Jeroen van Erp, jeroen@javadude.nl
  */
-public class VetoException extends Exception {
+public final class VetoException extends Exception {
     public VetoException(String messageFormat, Object... params) {
         this(format(messageFormat, params));
     }

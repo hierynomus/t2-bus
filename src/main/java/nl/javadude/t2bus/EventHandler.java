@@ -55,12 +55,13 @@ class EventHandler {
     EventHandler(Object target, Method method) {
         this(target, method, false);
     }
-        /**
-        * Creates a new EventHandler to wrap {@code method} on @{code target}.
-        *
-        * @param target object to which the method applies.
-        * @param method handler method.
-        */
+
+    /**
+     * Creates a new EventHandler to wrap {@code method} on @{code target}.
+     *
+     * @param target object to which the method applies.
+     * @param method handler method.
+     */
     EventHandler(Object target, Method method, boolean vetoer) {
         checkNotNull(target, "EventHandler target cannot be null.");
         checkNotNull(method, "EventHandler method cannot be null.");
@@ -77,18 +78,18 @@ class EventHandler {
      *
      * @param event event to handle
      * @throws java.lang.reflect.InvocationTargetException
-     *          if the wrapped method throws any
-     *          {@link Throwable} that is not an {@link Error} ({@code Error}s are
-     *          propagated as-is).
-     * @throws  VetoException if the method vetoes the event.
+     *                       if the wrapped method throws any
+     *                       {@link Throwable} that is not an {@link Error} ({@code Error}s are
+     *                       propagated as-is).
+     * @throws VetoException if the method vetoes the event.
      */
     public void handleEvent(Object event) throws InvocationTargetException, VetoException {
         try {
             method.invoke(target, event);
         } catch (IllegalArgumentException e) {
-            throw new Error("Method rejected target/argument: " + event, e);
+            throw new BusError("Method rejected target/argument: " + event, e);
         } catch (IllegalAccessException e) {
-            throw new Error("Method became inaccessible: " + event, e);
+            throw new BusError("Method became inaccessible: " + event, e);
         } catch (InvocationTargetException e) {
             if (e.getCause() instanceof Error) {
                 throw (Error) e.getCause();
