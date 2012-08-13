@@ -16,6 +16,17 @@
 
 package nl.javadude.t2bus;
 
+import java.lang.reflect.InvocationTargetException;
+import java.util.Collection;
+import java.util.List;
+import java.util.Map.Entry;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.CopyOnWriteArraySet;
+import java.util.concurrent.ExecutionException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import com.google.common.base.Supplier;
 import com.google.common.base.Throwables;
 import com.google.common.cache.CacheBuilder;
@@ -25,19 +36,6 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
 import com.google.common.collect.SetMultimap;
 import com.google.common.reflect.TypeToken;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
-import java.util.Collection;
-import java.util.List;
-import java.util.Map.Entry;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArraySet;
-import java.util.concurrent.ExecutionException;
 
 import static com.google.common.collect.Lists.newArrayList;
 
@@ -137,8 +135,6 @@ public class T2Bus {
      */
     private final Logger logger;
 
-    private final ExceptionHandler defaultExceptionHandler;
-
     /**
      * Strategy for finding handler methods in registered objects.  Currently,
      * only the {@link AnnotatedHandlerFinder} is supported, but this is
@@ -164,16 +160,6 @@ public class T2Bus {
         @Override
         protected Boolean initialValue() {
             return false;
-        }
-    };
-
-    /**
-     * ExceptionHandler for the current thread. Can only be set when we're not dispatching events.
-     */
-    private final ThreadLocal<ExceptionHandler> exceptionHandler = new ThreadLocal<ExceptionHandler>() {
-        @Override
-        protected ExceptionHandler initialValue() {
-            return defaultExceptionHandler;
         }
     };
 
@@ -206,7 +192,6 @@ public class T2Bus {
      */
     public T2Bus(String identifier) {
         logger = LoggerFactory.getLogger(com.google.common.eventbus.EventBus.class.getName() + "." + identifier);
-        defaultExceptionHandler = new LoggingExceptionHandler(logger);
     }
 
     /**
@@ -274,30 +259,6 @@ public class T2Bus {
         }
 
         dispatchQueuedEvents();
-    }
-
-    /**
-     * Posts an event to all registered handlers.  This method will return
-     * successfully after the event has been posted to all handlers, and
-     * regardless of any exceptions thrown by handlers.
-     * <p/>
-     * If an exception occurs in any handler, the passed in exceptionHandler
-     * will be used to handle the exception.
-     * <p/>
-     * <p>If no handlers have been subscribed for {@code event}'s class, and
-     * {@code event} is not already a {@link DeadEvent}, it will be wrapped in a
-     * DeadEvent and reposted.
-     *
-     * @param event            event to post.
-     * @param exceptionHandler the exceptionHandler that is used to handle any exceptions from subscribers.
-     */
-    public void post(Object event, ExceptionHandler exceptionHandler) {
-        if (isDispatching.get()) {
-            throw new BusError("Cannot set a new ExceptionHandler when in a dispatch loop. Event = [%s]", event);
-        }
-        this.exceptionHandler.set(exceptionHandler);
-        post(event);
-        this.exceptionHandler.remove();
     }
 
     private void divvyUpWrappers(Set<EventHandler> wrappers, List<EventHandler> vetoers, List<EventHandler> handlers) {
@@ -374,7 +335,8 @@ public class T2Bus {
         try {
             wrapper.handleEvent(event);
         } catch (InvocationTargetException e) {
-            handleException(event, wrapper, e);
+            logger.error("Error occurred when handling exception from [{}] with event [{}]", wrapper.method, event);
+            logger.error("Exception that was being handled: ", e.getCause());
         } catch (VetoException e) {
             if (wrapper.isVetoer()) {
                 logger.error("Event " + event + " was vetoed by handler " + wrapper, e);
@@ -383,16 +345,6 @@ public class T2Bus {
             throw new Error("non-vetoer " + wrapper + " should not be able to throw a VetoException", e);
         }
         return true;
-    }
-
-    private void handleException(final Object event, final EventHandler wrapper, final InvocationTargetException e) {
-        try {
-            exceptionHandler.get().handle(e.getCause(), event, wrapper.target, wrapper.method);
-        } catch (Exception ex) {
-            logger.error("Error occurred when handling exception from [{}] with event [{}]", wrapper.method, event);
-            logger.error("Exception that was being handled: ", e.getCause());
-            logger.error("Exception that occurred: ", ex);
-        }
     }
 
     /**
@@ -446,19 +398,6 @@ public class T2Bus {
             this.event = event;
             this.vetoers = vetoers;
             this.handlers = handlers;
-        }
-    }
-
-    static class LoggingExceptionHandler implements ExceptionHandler {
-        private final Logger logger;
-
-        LoggingExceptionHandler(final Logger logger) {
-            this.logger = logger;
-        }
-
-        @Override
-        public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) {
-            logger.error("Could not dispatch event: " + event + " to handler " + subscriber + "[" + handler.getName() + "]", t);
         }
     }
 }
