@@ -375,6 +375,13 @@ public class T2Bus {
             wrapper.handleEvent(event);
         } catch (InvocationTargetException e) {
             handleException(event, wrapper, e);
+            if (wrapper.isVetoer()) {
+                if (e.getCause() instanceof RuntimeException) {
+                    throw (RuntimeException) e.getCause();
+                } else {
+                    throw new RuntimeException(e.getCause());
+                }
+            }
         } catch (VetoException e) {
             if (wrapper.isVetoer()) {
                 logger.error("Event " + event + " was vetoed by handler " + wrapper, e);
