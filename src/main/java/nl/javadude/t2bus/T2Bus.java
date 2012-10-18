@@ -25,10 +25,10 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
 import com.google.common.collect.SetMultimap;
 import com.google.common.reflect.TypeToken;
+import nl.javadude.t2bus.event.strategy.BasicEventHandlerStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.List;
@@ -137,7 +137,7 @@ public class T2Bus {
      */
     private final Logger logger;
 
-    private final ExceptionHandler defaultExceptionHandler;
+    private final EventHandlerStrategy defaultEventHandler;
 
     /**
      * Strategy for finding handler methods in registered objects.  Currently,
@@ -170,10 +170,10 @@ public class T2Bus {
     /**
      * ExceptionHandler for the current thread. Can only be set when we're not dispatching events.
      */
-    private final ThreadLocal<ExceptionHandler> exceptionHandler = new ThreadLocal<ExceptionHandler>() {
+    private final ThreadLocal<EventHandlerStrategy> eventHandler = new ThreadLocal<EventHandlerStrategy>() {
         @Override
-        protected ExceptionHandler initialValue() {
-            return defaultExceptionHandler;
+        protected EventHandlerStrategy initialValue() {
+            return defaultEventHandler;
         }
     };
 
@@ -206,7 +206,7 @@ public class T2Bus {
      */
     public T2Bus(String identifier) {
         logger = LoggerFactory.getLogger(com.google.common.eventbus.EventBus.class.getName() + "." + identifier);
-        defaultExceptionHandler = new LoggingExceptionHandler(logger);
+        defaultEventHandler = new BasicEventHandlerStrategy();
     }
 
     /**
@@ -289,15 +289,15 @@ public class T2Bus {
      * DeadEvent and reposted.
      *
      * @param event            event to post.
-     * @param exceptionHandler the exceptionHandler that is used to handle any exceptions from subscribers.
+     * @param eventHandlerStrategy the exceptionHandler that is used to handle any exceptions from subscribers.
      */
-    public void post(Object event, ExceptionHandler exceptionHandler) {
+    public void post(Object event, EventHandlerStrategy eventHandlerStrategy) {
         if (isDispatching.get()) {
             throw new BusError("Cannot set a new ExceptionHandler when in a dispatch loop. Event = [%s]", event);
         }
-        this.exceptionHandler.set(exceptionHandler);
+        this.eventHandler.set(eventHandlerStrategy);
         post(event);
-        this.exceptionHandler.remove();
+        this.eventHandler.remove();
     }
 
     private void divvyUpWrappers(Set<EventHandler> wrappers, List<EventHandler> vetoers, List<EventHandler> handlers) {
@@ -371,35 +371,7 @@ public class T2Bus {
      * @param wrapper wrapper that will call the handler.
      */
     boolean handle(Object event, EventHandler wrapper) {
-        try {
-            wrapper.handleEvent(event);
-        } catch (InvocationTargetException e) {
-            handleException(event, wrapper, e);
-            if (wrapper.isVetoer()) {
-                if (e.getCause() instanceof RuntimeException) {
-                    throw (RuntimeException) e.getCause();
-                } else {
-                    throw new RuntimeException(e.getCause());
-                }
-            }
-        } catch (VetoException e) {
-            if (wrapper.isVetoer()) {
-                logger.error("Event " + event + " was vetoed by handler " + wrapper, e);
-                return false;
-            }
-            throw new Error("non-vetoer " + wrapper + " should not be able to throw a VetoException", e);
-        }
-        return true;
-    }
-
-    private void handleException(final Object event, final EventHandler wrapper, final InvocationTargetException e) {
-        try {
-            exceptionHandler.get().handle(e.getCause(), event, wrapper.target, wrapper.method);
-        } catch (Exception ex) {
-            logger.error("Error occurred when handling exception from [{}] with event [{}]", wrapper.method, event);
-            logger.error("Exception that was being handled: ", e.getCause());
-            logger.error("Exception that occurred: ", ex);
-        }
+        return eventHandler.get().handle(event, wrapper);
     }
 
     /**
@@ -456,16 +428,4 @@ public class T2Bus {
         }
     }
 
-    static class LoggingExceptionHandler implements ExceptionHandler {
-        private final Logger logger;
-
-        LoggingExceptionHandler(final Logger logger) {
-            this.logger = logger;
-        }
-
-        @Override
-        public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) {
-            logger.error("Could not dispatch event: " + event + " to handler " + subscriber + "[" + handler.getName() + "]", t);
-        }
-    }
 }

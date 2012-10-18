@@ -36,16 +36,16 @@ import static com.google.common.collect.Lists.newArrayList;
  * @author Cliff Biffle
  * @author Jeroen van Erp, jeroen@javadude.nl
  */
-class EventHandler {
+public class EventHandler {
 
     /**
      * Object sporting the handler method.
      */
-    final Object target;
+    private final Object target;
     /**
      * Handler method.
      */
-    final Method method;
+    private final Method method;
 
     /**
      * Whether the method is a vetoer.
@@ -102,6 +102,14 @@ class EventHandler {
 
     public boolean isVetoer() {
         return vetoer;
+    }
+
+    public Object getTarget() {
+        return target;
+    }
+
+    public Method getMethod() {
+        return method;
     }
 
     @Override

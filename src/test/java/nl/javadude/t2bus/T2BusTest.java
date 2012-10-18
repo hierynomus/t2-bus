@@ -17,6 +17,8 @@
 package nl.javadude.t2bus;
 
 import com.google.common.collect.Lists;
+import nl.javadude.t2bus.event.strategy.ExceptionHandler;
+import nl.javadude.t2bus.event.strategy.ExceptionHandlerEventHandlerStrategy;
 import org.junit.Before;
 import org.junit.Test;
 
@@ -246,8 +248,9 @@ public class T2BusTest {
                 exceptions.add(t);
             }
         };
+        ExceptionHandlerEventHandlerStrategy strategy = new ExceptionHandlerEventHandlerStrategy(handler);
 
-        bus.post(EVENT, handler);
+        bus.post(EVENT, strategy);
 
         assertThat(exceptions, hasSize(1));
         assertThat(exceptions.get(0), instanceOf(IllegalArgumentException.class));
@@ -259,10 +262,10 @@ public class T2BusTest {
         bus.register(new Object() {
             @Subscribe
             public void iPost(String s) {
-                bus.post("Another Event", new ExceptionHandler() {
+                bus.post("Another Event", new ExceptionHandlerEventHandlerStrategy(new ExceptionHandler() {
                     @Override
                     public void handle(final Throwable t, final Object event, final Object subscriber, final Method handler) { throw new IllegalArgumentException(); }
-                });
+                }));
             }
         });
 
@@ -273,8 +276,9 @@ public class T2BusTest {
                 exceptions.add(t);
             }
         };
+        ExceptionHandlerEventHandlerStrategy strategy = new ExceptionHandlerEventHandlerStrategy(handler);
 
-        bus.post(EVENT, handler);
+        bus.post(EVENT, strategy);
         fail("Should have received BusError");
     }
 
@@ -293,8 +297,9 @@ public class T2BusTest {
                 throw new IllegalStateException("Boom!", t);
             }
         };
+        ExceptionHandlerEventHandlerStrategy strategy = new ExceptionHandlerEventHandlerStrategy(handler);
 
-        bus.post(EVENT, handler);
+        bus.post(EVENT, strategy);
     }
 
     /**

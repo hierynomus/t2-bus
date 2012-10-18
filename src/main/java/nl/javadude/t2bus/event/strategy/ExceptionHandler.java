@@ -1,4 +1,4 @@
-package nl.javadude.t2bus;
+package nl.javadude.t2bus.event.strategy;
 
 import java.lang.reflect.Method;
 
