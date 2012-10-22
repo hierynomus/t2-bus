@@ -6,8 +6,8 @@ import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.Method;
 
-public class BasicEventHandlerStrategy extends ExceptionHandlerEventHandlerStrategy {
-    public BasicEventHandlerStrategy() {
+public class LoggingEventHandlerStrategy extends ExceptionHandlerEventHandlerStrategy {
+    public LoggingEventHandlerStrategy() {
         super(new LoggingExceptionHandler(logger));
     }
 
@@ -24,5 +24,5 @@ public class BasicEventHandlerStrategy extends ExceptionHandlerEventHandlerStrat
         }
     }
 
-    private static final Logger logger = LoggerFactory.getLogger(BasicEventHandlerStrategy.class);
+    private static final Logger logger = LoggerFactory.getLogger(LoggingEventHandlerStrategy.class);
 }

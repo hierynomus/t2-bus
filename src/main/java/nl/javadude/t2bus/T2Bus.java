@@ -25,11 +25,10 @@ import com.google.common.collect.Multimap;
 import com.google.common.collect.Multimaps;
 import com.google.common.collect.SetMultimap;
 import com.google.common.reflect.TypeToken;
-import nl.javadude.t2bus.event.strategy.BasicEventHandlerStrategy;
+import nl.javadude.t2bus.event.strategy.LoggingEventHandlerStrategy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.lang.reflect.Method;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map.Entry;
@@ -206,7 +205,7 @@ public class T2Bus {
      */
     public T2Bus(String identifier) {
         logger = LoggerFactory.getLogger(com.google.common.eventbus.EventBus.class.getName() + "." + identifier);
-        defaultEventHandler = new BasicEventHandlerStrategy();
+        defaultEventHandler = new LoggingEventHandlerStrategy();
     }
 
     /**
